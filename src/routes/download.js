@@ -80,13 +80,13 @@ router.get('/download', async (req, res) => {
       }
     }
 
-    // Stream audio to response (async - uses yt-dlp + ffmpeg pipeline)
-    const process = await streamAudio(videoId, res, filename);
+    // Stream audio to response
+    const process = streamAudio(videoId, res, filename);
 
     // Handle client disconnect
     req.on('close', () => {
       if (process && !process.killed) {
-        console.log('Client disconnected, killing ffmpeg process');
+        console.log('Client disconnected, killing yt-dlp process');
         process.kill('SIGTERM');
       }
     });

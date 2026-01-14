@@ -7,7 +7,6 @@ A Node.js backend service that streams YouTube audio as MP3 files using yt-dlp. 
 - Stream YouTube audio as MP3
 - No server-side storage (direct streaming)
 - API key authentication
-- Cookie-based authentication support (bypass bot detection)
 - CORS support for frontend integration
 - Ready for Render.com deployment
 
@@ -208,44 +207,6 @@ const downloadYouTubeAudio = async (videoId, title) => {
 | `PORT` | No | `3000` | Server port |
 | `API_KEY` | Yes | - | API key for authentication |
 | `ALLOWED_ORIGINS` | No | `localhost` | Comma-separated list of allowed origins |
-| `YOUTUBE_COOKIES` | No | - | YouTube cookies for bypassing bot detection (see below) |
-
-## YouTube Cookie Authentication (Optional)
-
-To bypass YouTube's bot detection and download videos that require verification, you can provide your YouTube cookies.
-
-### How to Export YouTube Cookies
-
-1. **Install Chrome Extension**
-   - Install ["Get cookies.txt LOCALLY"](https://chrome.google.com/webstore/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc) extension
-
-2. **Sign in to YouTube**
-   - Go to [youtube.com](https://youtube.com) and sign in with your account
-
-3. **Export Cookies**
-   - Click the extension icon
-   - Click **"Export"** button
-   - Select **"Netscape format"**
-   - Copy the entire content
-
-4. **Add to Render Environment Variables**
-   - Go to Render dashboard > Your service > **Environment** tab
-   - Add new variable:
-     - **Key**: `YOUTUBE_COOKIES`
-     - **Value**: Paste the entire cookies.txt content
-   - Click **Save Changes**
-   - Redeploy your service
-
-### Local Development
-
-Add to your `.env` file:
-```env
-YOUTUBE_COOKIES="# Netscape HTTP Cookie File
-.youtube.com	TRUE	/	FALSE	1735689600	VISITOR_INFO1_LIVE	...
-"
-```
-
-**Note**: Cookies expire after some time. You may need to re-export and update them periodically.
 
 ## Render Free Tier Notes
 
@@ -272,12 +233,6 @@ YOUTUBE_COOKIES="# Netscape HTTP Cookie File
 ### yt-dlp errors
 - The Docker container includes yt-dlp and ffmpeg
 - If issues persist, check Render logs for specific errors
-
-### "Sign in to confirm you're not a bot" error
-- YouTube is blocking the request due to bot detection
-- Export your YouTube cookies and add them as `YOUTUBE_COOKIES` environment variable
-- See "YouTube Cookie Authentication" section above for instructions
-- Cookies expire periodically - re-export and update them if errors return
 
 ## License
 
