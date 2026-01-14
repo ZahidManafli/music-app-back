@@ -1,4 +1,5 @@
 const { spawn } = require('child_process');
+const { getContentDisposition } = require('../utils/helpers');
 
 /**
  * YouTube Service using yt-dlp
@@ -62,64 +63,120 @@ const getVideoInfo = (videoId) => {
 };
 
 /**
- * Stream audio as MP3 directly to response
+ * Get the direct audio URL from YouTube using yt-dlp
+ * @param {string} videoId - YouTube video ID
+ * @returns {Promise<string>} Direct audio URL
+ */
+const getAudioUrl = (videoId) => {
+  return new Promise((resolve, reject) => {
+    const url = `https://www.youtube.com/watch?v=${videoId}`;
+    
+    const ytdlp = spawn('yt-dlp', [
+      '-f', 'bestaudio[ext=m4a]/bestaudio/best',
+      '--get-url',
+      '--no-playlist',
+      '--no-warnings',
+      url
+    ]);
+
+    let stdout = '';
+    let stderr = '';
+
+    ytdlp.stdout.on('data', (data) => {
+      stdout += data.toString();
+    });
+
+    ytdlp.stderr.on('data', (data) => {
+      stderr += data.toString();
+    });
+
+    ytdlp.on('close', (code) => {
+      if (code !== 0) {
+        console.error('yt-dlp get-url error:', stderr);
+        reject(new Error(`Failed to get audio URL: ${stderr || 'Unknown error'}`));
+        return;
+      }
+
+      const audioUrl = stdout.trim();
+      if (!audioUrl) {
+        reject(new Error('No audio URL returned'));
+        return;
+      }
+
+      resolve(audioUrl);
+    });
+
+    ytdlp.on('error', (err) => {
+      reject(new Error(`yt-dlp not found: ${err.message}`));
+    });
+  });
+};
+
+/**
+ * Stream audio as MP3 directly to response using ffmpeg
+ * Uses a two-stage pipeline: yt-dlp gets URL, ffmpeg converts to MP3
  * @param {string} videoId - YouTube video ID
  * @param {Object} res - Express response object
  * @param {string} filename - Filename for download
- * @returns {ChildProcess} The yt-dlp process
+ * @returns {Promise<ChildProcess>} The ffmpeg process
  */
-const streamAudio = (videoId, res, filename) => {
-  const url = `https://www.youtube.com/watch?v=${videoId}`;
-  
-  // yt-dlp arguments for streaming audio
-  const args = [
-    '-f', 'bestaudio[ext=m4a]/bestaudio',  // Best audio format
-    '-x',                                    // Extract audio
-    '--audio-format', 'mp3',                 // Convert to MP3
-    '--audio-quality', '0',                  // Best quality
-    '-o', '-',                               // Output to stdout
-    '--no-playlist',                         // Don't download playlists
-    '--no-warnings',                         // Suppress warnings
-    url
-  ];
-
+const streamAudio = async (videoId, res, filename) => {
   console.log(`Starting download: ${videoId}`);
   
-  const ytdlp = spawn('yt-dlp', args);
+  try {
+    // Step 1: Get direct audio URL from YouTube
+    const audioUrl = await getAudioUrl(videoId);
+    console.log(`Got audio URL for: ${videoId}`);
 
-  // Set response headers for file download
-  res.setHeader('Content-Type', 'audio/mpeg');
-  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-  res.setHeader('Transfer-Encoding', 'chunked');
+    // Step 2: Use ffmpeg to convert and stream to response
+    const ffmpeg = spawn('ffmpeg', [
+      '-i', audioUrl,           // Input from URL
+      '-vn',                    // No video
+      '-acodec', 'libmp3lame',  // MP3 codec
+      '-ab', '192k',            // Bitrate
+      '-f', 'mp3',              // Output format
+      'pipe:1'                  // Output to stdout
+    ]);
 
-  // Pipe yt-dlp stdout directly to response
-  ytdlp.stdout.pipe(res);
+    // Set response headers for file download
+    res.setHeader('Content-Type', 'audio/mpeg');
+    res.setHeader('Content-Disposition', getContentDisposition(filename));
+    res.setHeader('Transfer-Encoding', 'chunked');
 
-  // Handle errors
-  ytdlp.stderr.on('data', (data) => {
-    const message = data.toString();
-    // Only log actual errors, not progress messages
-    if (message.includes('ERROR') || message.includes('error')) {
-      console.error('yt-dlp stderr:', message);
-    }
-  });
+    // Pipe ffmpeg stdout directly to response
+    ffmpeg.stdout.pipe(res);
 
-  ytdlp.on('error', (err) => {
-    console.error('yt-dlp process error:', err.message);
+    // Handle ffmpeg errors (stderr contains progress info, filter for real errors)
+    ffmpeg.stderr.on('data', (data) => {
+      const message = data.toString();
+      if (message.includes('Error') || message.includes('error:')) {
+        console.error('ffmpeg error:', message);
+      }
+    });
+
+    ffmpeg.on('error', (err) => {
+      console.error('ffmpeg process error:', err.message);
+      if (!res.headersSent) {
+        res.status(500).json({ error: 'Download failed', message: err.message });
+      }
+    });
+
+    ffmpeg.on('close', (code) => {
+      if (code !== 0 && code !== null) {
+        console.error(`ffmpeg exited with code ${code}`);
+      } else {
+        console.log(`Download completed: ${videoId}`);
+      }
+    });
+
+    return ffmpeg;
+  } catch (err) {
+    console.error('Stream setup error:', err.message);
     if (!res.headersSent) {
       res.status(500).json({ error: 'Download failed', message: err.message });
     }
-  });
-
-  ytdlp.on('close', (code) => {
-    if (code !== 0 && code !== null) {
-      console.error(`yt-dlp exited with code ${code}`);
-    } else {
-      console.log(`Download completed: ${videoId}`);
-    }
-  });
-
-  return ytdlp;
+    throw err;
+  }
 };
 
 /**
@@ -135,6 +192,7 @@ const isValidVideoId = (videoId) => {
 
 module.exports = {
   getVideoInfo,
+  getAudioUrl,
   streamAudio,
   isValidVideoId,
 };

@@ -12,8 +12,10 @@ const sanitizeFilename = (filename) => {
   if (!filename) return 'download';
   
   return filename
-    // Remove/replace invalid characters
+    // Remove/replace invalid characters for filesystem
     .replace(/[<>:"/\\|?*]/g, '')
+    // Remove non-ASCII characters (required for HTTP headers)
+    .replace(/[^\x20-\x7E]/g, '')
     // Replace multiple spaces with single space
     .replace(/\s+/g, ' ')
     // Remove leading/trailing spaces
@@ -69,8 +71,22 @@ const extractVideoId = (url) => {
   return null;
 };
 
+/**
+ * Create a safe Content-Disposition header value
+ * Uses ASCII-only filename for maximum compatibility
+ * @param {string} filename - The filename (should be pre-sanitized)
+ * @returns {string} Safe Content-Disposition header value
+ */
+const getContentDisposition = (filename) => {
+  // Ensure filename is ASCII-safe
+  const safeFilename = sanitizeFilename(filename);
+  // Use simple format without quotes to avoid header parsing issues
+  return `attachment; filename=${safeFilename.replace(/\s/g, '_')}`;
+};
+
 module.exports = {
   sanitizeFilename,
   formatDuration,
   extractVideoId,
+  getContentDisposition,
 };
