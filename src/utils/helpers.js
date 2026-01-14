@@ -12,10 +12,8 @@ const sanitizeFilename = (filename) => {
   if (!filename) return 'download';
   
   return filename
-    // Remove/replace invalid filesystem characters
+    // Remove/replace invalid characters
     .replace(/[<>:"/\\|?*]/g, '')
-    // Remove non-ASCII characters (required for HTTP headers)
-    .replace(/[^\x20-\x7E]/g, '')
     // Replace multiple spaces with single space
     .replace(/\s+/g, ' ')
     // Remove leading/trailing spaces
