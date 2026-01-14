@@ -6,6 +6,80 @@ const { spawn } = require('child_process');
  */
 
 /**
+ * Custom error class for YouTube download errors
+ */
+class YouTubeError extends Error {
+  constructor(code, message) {
+    super(message);
+    this.code = code;
+    this.name = 'YouTubeError';
+  }
+}
+
+/**
+ * Categorize yt-dlp error messages into user-friendly errors
+ * @param {string} stderr - The stderr output from yt-dlp
+ * @returns {YouTubeError} Categorized error with code and friendly message
+ */
+const categorizeError = (stderr) => {
+  const errorText = stderr.toLowerCase();
+  
+  // Bot/verification check
+  if (errorText.includes('sign in to confirm') || errorText.includes('not a bot')) {
+    return new YouTubeError(
+      'BOT_CHECK',
+      'This video requires verification and cannot be downloaded. Please try another video.'
+    );
+  }
+  
+  // Video not available (removed, private, etc.)
+  if (errorText.includes('not available') || errorText.includes('video unavailable')) {
+    return new YouTubeError(
+      'UNAVAILABLE',
+      'This video is not available (removed, private, or restricted).'
+    );
+  }
+  
+  // Region/country restriction
+  if (errorText.includes('not available in your country') || errorText.includes('geo')) {
+    return new YouTubeError(
+      'REGION_BLOCKED',
+      'This video is not available in the server region.'
+    );
+  }
+  
+  // Age restriction
+  if (errorText.includes('age') && (errorText.includes('restrict') || errorText.includes('verify'))) {
+    return new YouTubeError(
+      'AGE_RESTRICTED',
+      'This video is age-restricted and requires login to download.'
+    );
+  }
+  
+  // Copyright/removed
+  if (errorText.includes('copyright') || errorText.includes('removed')) {
+    return new YouTubeError(
+      'COPYRIGHT',
+      'This video was removed due to copyright or other restrictions.'
+    );
+  }
+  
+  // Live stream
+  if (errorText.includes('live') && errorText.includes('stream')) {
+    return new YouTubeError(
+      'LIVE_STREAM',
+      'Live streams cannot be downloaded. Please try a regular video.'
+    );
+  }
+  
+  // Generic/unknown error
+  return new YouTubeError(
+    'UNKNOWN',
+    'Failed to download this video. Please try another one.'
+  );
+};
+
+/**
  * Get video information (title, duration, etc.)
  * @param {string} videoId - YouTube video ID
  * @returns {Promise<Object>} Video information
@@ -92,13 +166,14 @@ const getAudioUrl = (videoId) => {
     ytdlp.on('close', (code) => {
       if (code !== 0) {
         console.error('yt-dlp get-url error:', stderr);
-        reject(new Error(stderr || 'Failed to get audio URL'));
+        // Use categorized error for user-friendly messages
+        reject(categorizeError(stderr));
         return;
       }
 
       const audioUrl = stdout.trim();
       if (!audioUrl) {
-        reject(new Error('No audio URL returned'));
+        reject(new YouTubeError('NO_URL', 'No audio URL returned from YouTube.'));
         return;
       }
 
@@ -106,7 +181,7 @@ const getAudioUrl = (videoId) => {
     });
 
     ytdlp.on('error', (err) => {
-      reject(new Error(`yt-dlp not found: ${err.message}`));
+      reject(new YouTubeError('YT_DLP_NOT_FOUND', `yt-dlp not found: ${err.message}`));
     });
   });
 };
@@ -187,4 +262,5 @@ module.exports = {
   getAudioUrl,
   streamAudio,
   isValidVideoId,
+  YouTubeError,
 };

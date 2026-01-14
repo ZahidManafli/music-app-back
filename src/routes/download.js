@@ -1,8 +1,31 @@
 const express = require('express');
 const router = express.Router();
 const apiKeyAuth = require('../middleware/auth');
-const { getVideoInfo, streamAudio, isValidVideoId } = require('../services/youtube');
+const { getVideoInfo, streamAudio, isValidVideoId, YouTubeError } = require('../services/youtube');
 const { sanitizeFilename } = require('../utils/helpers');
+
+/**
+ * Get HTTP status code based on YouTube error code
+ * @param {string} errorCode - The error code from YouTubeError
+ * @returns {number} HTTP status code
+ */
+const getHttpStatus = (errorCode) => {
+  switch (errorCode) {
+    case 'BOT_CHECK':
+    case 'AGE_RESTRICTED':
+    case 'REGION_BLOCKED':
+    case 'COPYRIGHT':
+      return 403; // Forbidden
+    case 'UNAVAILABLE':
+      return 404; // Not Found
+    case 'LIVE_STREAM':
+      return 400; // Bad Request
+    case 'YT_DLP_NOT_FOUND':
+      return 503; // Service Unavailable
+    default:
+      return 500; // Internal Server Error
+  }
+};
 
 // Apply API key authentication to all routes
 router.use(apiKeyAuth);
@@ -92,10 +115,12 @@ router.get('/download', async (req, res) => {
     });
 
   } catch (err) {
-    console.error('Download error:', err.message);
+    console.error('Download error:', err.code || 'UNKNOWN', '-', err.message);
     if (!res.headersSent) {
-      res.status(500).json({ 
-        error: 'Download failed',
+      // Use appropriate HTTP status code based on error type
+      const status = err instanceof YouTubeError ? getHttpStatus(err.code) : 500;
+      res.status(status).json({ 
+        error: err.code || 'DOWNLOAD_FAILED',
         message: err.message
       });
     }
