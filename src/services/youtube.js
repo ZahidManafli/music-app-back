@@ -1,9 +1,36 @@
 const { spawn } = require('child_process');
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
 
 /**
- * YouTube Service using yt-dlp
+ * YouTube Service using yt-dlp + ffmpeg pipeline
+ * Supports cookie-based authentication for bot detection bypass
  * Streams audio directly without saving to disk
  */
+
+/**
+ * Write YouTube cookies from environment variable to temp file
+ * @returns {string|null} Path to temp cookie file, or null if no cookies configured
+ */
+const writeCookiesFile = () => {
+  if (!process.env.YOUTUBE_COOKIES) {
+    return null; // No cookies configured
+  }
+  const cookiePath = path.join(os.tmpdir(), `yt-cookies-${Date.now()}.txt`);
+  fs.writeFileSync(cookiePath, process.env.YOUTUBE_COOKIES);
+  return cookiePath;
+};
+
+/**
+ * Clean up temporary cookies file
+ * @param {string} cookiePath - Path to the temp cookie file
+ */
+const cleanupCookiesFile = (cookiePath) => {
+  if (cookiePath && fs.existsSync(cookiePath)) {
+    fs.unlinkSync(cookiePath);
+  }
+};
 
 /**
  * Get video information (title, duration, etc.)
@@ -13,12 +40,15 @@ const { spawn } = require('child_process');
 const getVideoInfo = (videoId) => {
   return new Promise((resolve, reject) => {
     const url = `https://www.youtube.com/watch?v=${videoId}`;
+    const cookiePath = writeCookiesFile();
     
-    const ytdlp = spawn('yt-dlp', [
-      '--dump-json',
-      '--no-download',
-      url
-    ]);
+    const args = ['--dump-json', '--no-download'];
+    if (cookiePath) {
+      args.push('--cookies', cookiePath);
+    }
+    args.push(url);
+    
+    const ytdlp = spawn('yt-dlp', args);
 
     let stdout = '';
     let stderr = '';
@@ -32,6 +62,8 @@ const getVideoInfo = (videoId) => {
     });
 
     ytdlp.on('close', (code) => {
+      cleanupCookiesFile(cookiePath);
+      
       if (code !== 0) {
         console.error('yt-dlp error:', stderr);
         reject(new Error(`Failed to get video info: ${stderr || 'Unknown error'}`));
@@ -56,70 +88,124 @@ const getVideoInfo = (videoId) => {
     });
 
     ytdlp.on('error', (err) => {
+      cleanupCookiesFile(cookiePath);
       reject(new Error(`yt-dlp not found or failed to start: ${err.message}`));
     });
   });
 };
 
 /**
- * Stream audio as MP3 directly to response
+ * Get direct audio stream URL from YouTube using yt-dlp
+ * @param {string} videoId - YouTube video ID
+ * @returns {Promise<string>} Direct audio URL
+ */
+const getAudioUrl = (videoId) => {
+  return new Promise((resolve, reject) => {
+    const url = `https://www.youtube.com/watch?v=${videoId}`;
+    const cookiePath = writeCookiesFile();
+    
+    const args = ['-f', 'bestaudio', '--get-url', '--no-playlist'];
+    if (cookiePath) {
+      args.push('--cookies', cookiePath);
+    }
+    args.push(url);
+    
+    const ytdlp = spawn('yt-dlp', args);
+
+    let stdout = '';
+    let stderr = '';
+
+    ytdlp.stdout.on('data', (data) => {
+      stdout += data.toString();
+    });
+
+    ytdlp.stderr.on('data', (data) => {
+      stderr += data.toString();
+    });
+
+    ytdlp.on('close', (code) => {
+      cleanupCookiesFile(cookiePath);
+      
+      if (code !== 0) {
+        console.error('yt-dlp get-url error:', stderr);
+        reject(new Error(stderr || 'Failed to get audio URL'));
+        return;
+      }
+
+      const audioUrl = stdout.trim();
+      if (!audioUrl) {
+        reject(new Error('No audio URL returned'));
+        return;
+      }
+
+      resolve(audioUrl);
+    });
+
+    ytdlp.on('error', (err) => {
+      cleanupCookiesFile(cookiePath);
+      reject(new Error(`yt-dlp not found: ${err.message}`));
+    });
+  });
+};
+
+/**
+ * Stream audio as MP3 using yt-dlp + ffmpeg pipeline
+ * Stage 1: yt-dlp gets direct audio URL (with cookies for auth)
+ * Stage 2: ffmpeg converts to MP3 and streams to response
  * @param {string} videoId - YouTube video ID
  * @param {Object} res - Express response object
  * @param {string} filename - Filename for download
- * @returns {ChildProcess} The yt-dlp process
+ * @returns {Promise<ChildProcess>} The ffmpeg process
  */
-const streamAudio = (videoId, res, filename) => {
-  const url = `https://www.youtube.com/watch?v=${videoId}`;
-  
-  // yt-dlp arguments for streaming audio
-  const args = [
-    '-f', 'bestaudio[ext=m4a]/bestaudio',  // Best audio format
-    '-x',                                    // Extract audio
-    '--audio-format', 'mp3',                 // Convert to MP3
-    '--audio-quality', '0',                  // Best quality
-    '-o', '-',                               // Output to stdout
-    '--no-playlist',                         // Don't download playlists
-    '--no-warnings',                         // Suppress warnings
-    url
-  ];
-
+const streamAudio = async (videoId, res, filename) => {
   console.log(`Starting download: ${videoId}`);
   
-  const ytdlp = spawn('yt-dlp', args);
+  // Stage 1: Get direct audio URL from YouTube (with cookies)
+  const audioUrl = await getAudioUrl(videoId);
+  console.log(`Got audio URL for: ${videoId}`);
+
+  // Stage 2: Use ffmpeg to convert and stream MP3
+  const ffmpeg = spawn('ffmpeg', [
+    '-i', audioUrl,           // Input from URL
+    '-vn',                    // No video
+    '-acodec', 'libmp3lame',  // MP3 codec
+    '-ab', '192k',            // 192kbps bitrate
+    '-f', 'mp3',              // Output format
+    'pipe:1'                  // Output to stdout
+  ]);
 
   // Set response headers for file download
   res.setHeader('Content-Type', 'audio/mpeg');
   res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
   res.setHeader('Transfer-Encoding', 'chunked');
 
-  // Pipe yt-dlp stdout directly to response
-  ytdlp.stdout.pipe(res);
+  // Pipe ffmpeg stdout directly to response
+  ffmpeg.stdout.pipe(res);
 
-  // Handle errors
-  ytdlp.stderr.on('data', (data) => {
+  // Handle ffmpeg stderr (contains progress info, filter for real errors)
+  ffmpeg.stderr.on('data', (data) => {
     const message = data.toString();
-    // Only log actual errors, not progress messages
-    if (message.includes('ERROR') || message.includes('error')) {
-      console.error('yt-dlp stderr:', message);
+    if (message.includes('Error') || message.includes('error:') || message.includes('Invalid')) {
+      console.error('ffmpeg error:', message);
     }
   });
 
-  ytdlp.on('error', (err) => {
-    console.error('yt-dlp process error:', err.message);
+  ffmpeg.on('error', (err) => {
+    console.error('ffmpeg process error:', err.message);
     if (!res.headersSent) {
       res.status(500).json({ error: 'Download failed', message: err.message });
     }
   });
 
-  ytdlp.on('close', (code) => {
+  ffmpeg.on('close', (code) => {
     if (code !== 0 && code !== null) {
-      console.error(`yt-dlp exited with code ${code}`);
+      console.error(`ffmpeg exited with code ${code}`);
     } else {
       console.log(`Download completed: ${videoId}`);
     }
   });
 
-  return ytdlp;
+  return ffmpeg;
 };
 
 /**
@@ -135,6 +221,7 @@ const isValidVideoId = (videoId) => {
 
 module.exports = {
   getVideoInfo,
+  getAudioUrl,
   streamAudio,
   isValidVideoId,
 };
