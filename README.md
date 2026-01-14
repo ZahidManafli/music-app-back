@@ -8,7 +8,7 @@ A Node.js backend service that streams YouTube audio as MP3 files using yt-dlp. 
 - No server-side storage (direct streaming)
 - API key authentication
 - CORS support for frontend integration
-- Ready for Railway deployment
+- Ready for Render.com deployment
 
 ## API Endpoints
 
@@ -23,7 +23,7 @@ A Node.js backend service that streams YouTube audio as MP3 files using yt-dlp. 
 All `/api/*` endpoints require the `x-api-key` header:
 
 ```bash
-curl -H "x-api-key: your-api-key" "https://your-app.up.railway.app/api/info?videoId=dQw4w9WgXcQ"
+curl -H "x-api-key: your-api-key" "https://your-app.onrender.com/api/info?videoId=dQw4w9WgXcQ"
 ```
 
 ### Example Responses
@@ -81,7 +81,7 @@ curl -H "x-api-key: your-api-key" "https://your-app.up.railway.app/api/info?vide
    curl http://localhost:3000/health
    ```
 
-## Railway Deployment
+## Render.com Deployment
 
 ### Step 1: Push to GitHub
 
@@ -97,57 +97,79 @@ curl -H "x-api-key: your-api-key" "https://your-app.up.railway.app/api/info?vide
    git push -u origin main
    ```
 
-### Step 2: Create Railway Project
+### Step 2: Create Render Account
 
-1. Go to [Railway.app](https://railway.app) and sign in with GitHub
-2. Click **"New Project"**
-3. Select **"Deploy from GitHub repo"**
-4. Choose your `music-app-back` repository
-5. Railway will automatically detect the Node.js project
+1. Go to [render.com](https://render.com) and sign up (free)
+2. Connect your GitHub account
 
-### Step 3: Configure Environment Variables
+### Step 3: Deploy Web Service
 
-In Railway dashboard, go to your project and click **"Variables"** tab:
+1. Click **"New +"** > **"Web Service"**
+2. Connect your `music-app-back` repository
+3. Configure the service:
+   - **Name**: `music-app-back`
+   - **Region**: Choose closest to your users
+   - **Branch**: `main`
+   - **Runtime**: `Docker`
+   - **Plan**: `Free`
+
+4. Click **"Create Web Service"**
+
+### Step 4: Configure Environment Variables
+
+In the Render dashboard, go to your service > **"Environment"** tab:
 
 | Variable | Value | Description |
 |----------|-------|-------------|
-| `API_KEY` | `your-secret-key` | API key for authentication (generate a strong random string) |
-| `ALLOWED_ORIGINS` | `https://your-frontend-url.com` | Frontend URL(s), comma-separated |
-| `PORT` | `3000` | Server port (Railway sets this automatically) |
+| `API_KEY` | `your-secret-key` | API key for authentication |
+| `ALLOWED_ORIGINS` | `https://your-frontend.com` | Frontend URL(s), comma-separated |
 
 **Generate a secure API key:**
 ```bash
 node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 ```
 
-### Step 4: Deploy
+### Step 5: Get Your URL
 
-1. Railway will automatically deploy when you push to GitHub
-2. Click **"Settings"** → **"Networking"** → **"Generate Domain"** to get your public URL
-3. Your backend will be available at: `https://your-app.up.railway.app`
+After deployment completes, your backend will be available at:
+```
+https://music-app-back.onrender.com
+```
+(The actual URL will be shown in your Render dashboard)
 
-### Step 5: Test Deployment
+### Step 6: Test Deployment
 
 ```bash
 # Health check
-curl https://your-app.up.railway.app/health
+curl https://your-app.onrender.com/health
 
 # Get video info
 curl -H "x-api-key: your-api-key" \
-  "https://your-app.up.railway.app/api/info?videoId=dQw4w9WgXcQ"
+  "https://your-app.onrender.com/api/info?videoId=dQw4w9WgXcQ"
 
 # Download audio (saves to file)
 curl -H "x-api-key: your-api-key" \
-  "https://your-app.up.railway.app/api/download?videoId=dQw4w9WgXcQ" \
+  "https://your-app.onrender.com/api/download?videoId=dQw4w9WgXcQ" \
   -o audio.mp3
 ```
+
+## One-Click Deploy (Blueprint)
+
+You can also deploy using the Render Blueprint:
+
+1. Fork this repository
+2. Go to [Render Dashboard](https://dashboard.render.com)
+3. Click **"New +"** > **"Blueprint"**
+4. Connect your forked repository
+5. Render will read `render.yaml` and set up everything automatically
+6. Enter values for `API_KEY` and `ALLOWED_ORIGINS` when prompted
 
 ## Frontend Integration
 
 Add these environment variables to your frontend `.env`:
 
 ```env
-VITE_YOUTUBE_BACKEND_URL=https://your-app.up.railway.app
+VITE_YOUTUBE_BACKEND_URL=https://your-app.onrender.com
 VITE_YOUTUBE_BACKEND_API_KEY=your-api-key
 ```
 
@@ -186,18 +208,31 @@ const downloadYouTubeAudio = async (videoId, title) => {
 | `API_KEY` | Yes | - | API key for authentication |
 | `ALLOWED_ORIGINS` | No | `localhost` | Comma-separated list of allowed origins |
 
+## Render Free Tier Notes
+
+- **750 free hours/month** - enough for a personal project
+- **Spins down after 15 min inactivity** - first request after idle may take ~30s
+- **No credit card required** for free tier
+
 ## Troubleshooting
 
-### "yt-dlp not found"
-Make sure yt-dlp is installed on the server. Railway's Nixpacks should handle this automatically.
+### "Service unavailable" or slow first request
+- Free tier services spin down after inactivity
+- First request after idle takes ~30 seconds to spin up
+- This is normal for free tier
 
 ### CORS errors
-Add your frontend URL to `ALLOWED_ORIGINS` environment variable.
+- Add your frontend URL to `ALLOWED_ORIGINS` environment variable
+- Use `*` for testing (not recommended for production)
 
-### Download fails
+### Download fails or times out
 - Check if the video is available in your region
 - Verify the video ID is correct (11 characters)
-- Check Railway logs for error details
+- Check Render logs for error details
+
+### yt-dlp errors
+- The Docker container includes yt-dlp and ffmpeg
+- If issues persist, check Render logs for specific errors
 
 ## License
 

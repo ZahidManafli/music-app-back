@@ -1,0 +1,19 @@
+# Render.com Blueprint Configuration
+# https://render.com/docs/blueprint-spec
+
+services:
+  - type: web
+    name: music-app-back
+    env: docker
+    plan: free
+    region: oregon
+    healthCheckPath: /health
+    envVars:
+      - key: API_KEY
+        sync: false  # Will prompt for value during deployment
+      - key: ALLOWED_ORIGINS
+        sync: false  # Will prompt for value during deployment
+      - key: PORT
+        value: 3000
+      - key: NODE_ENV
+        value: production
