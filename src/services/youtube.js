@@ -14,11 +14,23 @@ const os = require('os');
  * @returns {string|null} Path to temp cookie file, or null if no cookies configured
  */
 const writeCookiesFile = () => {
-  if (!process.env.YOUTUBE_COOKIES) {
-    return null; // No cookies configured
+  let cookies = process.env.YOUTUBE_COOKIES;
+  if (!cookies) {
+    console.log('No YOUTUBE_COOKIES env var configured');
+    return null;
   }
+
+  // Handle cases where cookies were stored with literal '\n'
+  cookies = cookies.replace(/\\n/g, '\n');
+
+  // Remove possible surrounding quotes
+  if (cookies.startsWith('"') && cookies.endsWith('"')) {
+    cookies = cookies.slice(1, -1);
+  }
+
   const cookiePath = path.join(os.tmpdir(), `yt-cookies-${Date.now()}.txt`);
-  fs.writeFileSync(cookiePath, process.env.YOUTUBE_COOKIES);
+  fs.writeFileSync(cookiePath, cookies);
+  console.log('Cookies file written to:', cookiePath);
   return cookiePath;
 };
 
