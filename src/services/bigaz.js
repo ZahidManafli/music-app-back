@@ -245,8 +245,7 @@ async function fetchSongPage(htmlFileName) {
       throw new Error('Could not extract song ID from filename');
     }
 
-    // Try to find audio parameters from the page
-    // These might be in JavaScript variables or data attributes
+    // Extract audio parameters from button data attributes
     let audioParams = {
       lk: null,
       mh: null,
@@ -254,24 +253,31 @@ async function fetchSongPage(htmlFileName) {
       hs: null,
     };
 
-    // Look for JavaScript variables or data attributes
-    const scriptContent = $('script').text();
+    // Find the listen button with id="listenbut"
+    const $listenButton = $('#listenbut');
     
-    // Try to extract parameters from script tags or data attributes
-    // This is a simplified approach - actual implementation may need adjustment
-    const lkMatch = scriptContent.match(/lk['":\s]*=['"]?([^'"]+)['"]?/i);
-    const mhMatch = scriptContent.match(/mh['":\s]*=['"]?([^'"]+)['"]?/i);
-    const mrMatch = scriptContent.match(/mr['":\s]*=['"]?([^'"]+)['"]?/i);
-    const hsMatch = scriptContent.match(/hs['":\s]*=['"]?([^'"]+)['"]?/i);
-
-    if (lkMatch) audioParams.lk = lkMatch[1];
-    if (mhMatch) audioParams.mh = mhMatch[1];
-    if (mrMatch) audioParams.mr = mrMatch[1];
-    if (hsMatch) audioParams.hs = hsMatch[1];
+    if ($listenButton.length > 0) {
+      // Extract data-dt attribute which contains query string parameters
+      const dataDt = $listenButton.attr('data-dt');
+      if (dataDt) {
+        // Parse the query string from data-dt
+        // Format: "id=869445&go=7&lk=...&mh=...&mr=..."
+        const params = new URLSearchParams(dataDt);
+        audioParams.lk = params.get('lk');
+        audioParams.mh = params.get('mh');
+        audioParams.mr = params.get('mr');
+      }
+      
+      // Extract data-hs attribute
+      const dataHs = $listenButton.attr('data-hs');
+      if (dataHs) {
+        audioParams.hs = dataHs;
+      }
+    }
 
     // Extract title and artist from page
     const pageTitle = $('title').text().replace(' Mp3 Yukle Mp3 dinle', '').trim();
-    const h1Title = $('.contentgray h1').text().trim();
+    const h1Title = $('.al-info h1').text().trim().replace(' mp3', '');
     const title = h1Title || pageTitle;
 
     return {
