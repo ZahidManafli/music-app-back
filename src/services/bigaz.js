@@ -280,11 +280,33 @@ async function fetchSongPage(htmlFileName) {
     const h1Title = $('.al-info h1').text().trim().replace(' mp3', '');
     const title = h1Title || pageTitle;
 
+    // Extract duration from page
+    // Format: <div class="musicline">Müddəti: <span class="val">02:28</span></div>
+    let duration = 0;
+    $('.musicline').each((index, element) => {
+      const $el = $(element);
+      const text = $el.text();
+      if (text.includes('Müddəti:') || text.includes('Muddeti:')) {
+        const $val = $el.find('.val');
+        const durationText = $val.text().trim();
+        if (durationText) {
+          // Parse MM:SS format to seconds
+          const parts = durationText.split(':');
+          if (parts.length === 2) {
+            const minutes = parseInt(parts[0], 10) || 0;
+            const seconds = parseInt(parts[1], 10) || 0;
+            duration = minutes * 60 + seconds;
+          }
+        }
+      }
+    });
+
     return {
       songId,
       title,
       htmlFileName,
       audioParams,
+      duration,
       html,
     };
   } catch (err) {
