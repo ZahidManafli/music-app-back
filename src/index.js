@@ -4,6 +4,7 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const downloadRoutes = require('./routes/download');
+const bigazRoutes = require('./routes/bigaz');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -46,6 +47,7 @@ app.get('/health', (req, res) => {
 
 // API routes (auth required)
 app.use('/api', downloadRoutes);
+app.use('/api/bigaz', bigazRoutes);
 
 // 404 handler
 app.use((req, res) => {
